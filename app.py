@@ -23,25 +23,29 @@ st.markdown("""
         color: white;
         font-weight: bold;
     }
+    .stButton > button:hover {
+        background-color: #2c4e8a;
+    }
     .success-box {
         background-color: #d4edda;
         padding: 1rem;
         border-radius: 0.5rem;
         border-left: 5px solid #28a745;
+        margin: 1rem 0;
     }
     .hint-box {
         background-color: #fff3cd;
         padding: 1rem;
         border-radius: 0.5rem;
         border-left: 5px solid #ffc107;
+        margin: 1rem 0;
     }
-    .level-complete {
-        background-color: #28a745;
-        color: white;
-        padding: 0.25rem 0.5rem;
+    .level-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem;
         border-radius: 1rem;
-        font-size: 0.8rem;
-        display: inline-block;
+        color: white;
+        margin: 1rem 0;
     }
     .leaderboard-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -63,6 +67,7 @@ st.markdown("""
         color: #0f0;
         padding: 0.5rem;
         border-radius: 0.5rem;
+        margin: 0.5rem 0;
     }
     .streak-badge {
         background: #ff4444;
@@ -77,6 +82,33 @@ st.markdown("""
         0% { transform: scale(1); }
         50% { transform: scale(1.05); }
         100% { transform: scale(1); }
+    }
+    .progress-circle {
+        text-align: center;
+        padding: 0.5rem;
+    }
+    .level-number {
+        background-color: #6c757d;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 18px;
+    }
+    .level-completed {
+        background-color: #28a745;
+    }
+    .sql-editor textarea {
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+    }
+    .stTextArea textarea {
+        font-family: 'Courier New', monospace;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -125,15 +157,20 @@ with st.sidebar:
     
     # Player name input
     if not st.session_state.player_name:
-        st.session_state.player_name = st.text_input("Enter your detective name:", 
-                                                      placeholder="Sherlock Holmes")
-    
-    if st.session_state.player_name:
+        player_name_input = st.text_input("Enter your detective name:", 
+                                           placeholder="Sherlock Holmes")
+        if player_name_input:
+            st.session_state.player_name = player_name_input
+            st.rerun()
+    else:
         st.success(f"Welcome, {st.session_state.player_name}!")
+        if st.button("Change Name"):
+            st.session_state.player_name = ""
+            st.rerun()
     
     st.markdown("---")
     
-    # Competitive mode selection
+    # Game mode selection
     st.subheader("🏆 Game Mode")
     mode = st.radio(
         "Choose your mode:",
@@ -147,6 +184,11 @@ with st.sidebar:
         st.session_state.race_mode = False
         if st.button("⏱️ Start Time Trial", type="primary"):
             game.start_time_trial()
+            st.session_state.score = 0
+            st.session_state.completed_levels = set()
+            st.session_state.current_level = 1
+            st.session_state.level_attempts = {}
+            st.session_state.level_completion_times = {}
             st.success("Time Trial Started! Complete all levels as fast as possible!")
             st.rerun()
     
@@ -159,7 +201,7 @@ with st.sidebar:
         
         if race_action == "🏁 Create Race":
             if st.button("Create New Race", type="primary"):
-                session_id = multiplayer.create_race(st.session_state.player_name)
+                session_id = multiplayer.create_race(st.session_state.player_name or "Detective")
                 st.session_state.race_session = session_id
                 st.success(f"Race created! Code: **{session_id}**")
                 st.info("Share this code with friends to join!")
@@ -167,12 +209,15 @@ with st.sidebar:
                 if st.button("Start Race"):
                     multiplayer.start_race(session_id)
                     game.start_time_trial()
+                    st.session_state.score = 0
+                    st.session_state.completed_levels = set()
+                    st.session_state.current_level = 1
                     st.rerun()
         
         else:
             session_code = st.text_input("Enter Race Code:")
             if st.button("Join Race") and session_code:
-                if multiplayer.join_race(session_code, st.session_state.player_name):
+                if multiplayer.join_race(session_code, st.session_state.player_name or "Detective"):
                     st.session_state.race_session = session_code
                     st.success("Joined race! Waiting for host to start...")
                 else:
@@ -185,7 +230,7 @@ with st.sidebar:
                 st.write("**Race Status:**")
                 for player, completed in status['completed'].items():
                     st.write(f"{player}: {completed}/5 levels")
-                if status['started']:
+                if status.get('started', False):
                     st.info("🏁 Race in progress!")
     
     else:
@@ -209,7 +254,7 @@ with st.sidebar:
     # Timer display for time trial
     if st.session_state.time_trial_mode and game.session_start_time:
         elapsed = time.time() - game.session_start_time
-        st.markdown(f'<div class="timer">{elapsed:.1f}s</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="timer">⏱️ {elapsed:.1f}s</div>', unsafe_allow_html=True)
     
     st.markdown("---")
     
@@ -256,12 +301,14 @@ with st.sidebar:
         table_info = get_table_info()
         for table_name, info in table_info.items():
             st.write(f"**{table_name.upper()}**")
-            st.write(f"Columns: {', '.join(info['columns'][:5])}...")
+            st.write(f"Columns: {', '.join(info['columns'][:5])}")
+            if len(info['columns']) > 5:
+                st.write(f"... and {len(info['columns']) - 5} more")
             st.caption(f"{info['row_count']} rows")
-            if st.button(f"Preview", key=f"preview_{table_name}"):
-                st.dataframe(info['sample'])
+            if st.button(f"Preview {table_name}", key=f"preview_{table_name}"):
+                st.dataframe(info['sample'], use_container_width=True)
 
-# Main content
+# Main content area
 st.title("🕵️ SQL Detective Academy")
 
 # Mode indicator
@@ -274,7 +321,7 @@ elif st.session_state.race_mode:
 level = game.levels[st.session_state.current_level]
 
 st.markdown(f"""
-<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 1rem; color: white; margin: 1rem 0;">
+<div class="level-card">
     <h2>🔍 Level {st.session_state.current_level}: {level['name']}</h2>
     <p><strong>Case Brief:</strong> {level['description']}</p>
     <p><strong>Your Mission:</strong> {level['task']}</p>
@@ -283,235 +330,44 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# SQL editor
-col_left, col_right = st.columns([3, 1])
+# SQL editor area
+st.subheader("✍️ Write Your SQL Query")
 
-with col_left:
-    st.subheader("✍️ Write Your SQL Query")
-    
-    attempts = st.session_state.level_attempts.get(st.session_state.current_level, 0)
-    st.caption(f"Attempts: {attempts}")
-    
-    query = st.text_area(
-        "Enter your SQL query below:",
-        height=150,
-        placeholder="Example: SELECT * FROM cases;",
-        key="sql_editor",
-        label_visibility="collapsed"
-    )
-    
-    col_buttons = st.columns(4)
-    with col_buttons[0]:
-        execute_button = st.button("🚀 Execute Query", type="primary", use_container_width=True)
-    with col_buttons[1]:
-        if st.button("💡 Get Hint", use_container_width=True):
-            hint = game.get_next_hint(st.session_state.current_level, query)
-            st.info(hint)
-    with col_buttons[2]:
-        if st.button("🔄 Reset Level", use_container_width=True):
-            if st.session_state.current_level in st.session_state.completed_levels:
-                st.session_state.completed_levels.remove(st.session_state.current_level)
-            st.session_state.current_streak = 0
-            st.session_state.score = max(0, st.session_state.score - 10)
-            st.success("Level reset!")
-            st.rerun()
-    with col_buttons[3]:
-        if st.session_state.time_trial_mode and st.button("⏱️ Best Times", use_container_width=True):
-            if st.session_state.level_completion_times:
-                st.write("**Your Best Times:**")
-                for lvl, t in st.session_state.level_completion_times.items():
-                    st.write(f"Level {lvl}: {t:.1f}s")
+attempts = st.session_state.level_attempts.get(st.session_state.current_level, 0)
+st.caption(f"Attempts: {attempts}")
 
-with col_right:
-    st.subheader("📖 SQL Reference")
-    with st.expander("Basic Commands"):
-        st.markdown("""
-        - **SELECT** - Choose columns
-        - **FROM** - Specify table
-        - **WHERE** - Filter rows
-        - **ORDER BY** - Sort results
-        - **LIMIT** - Limit rows
-        - **GROUP BY** - Group rows
-        - **JOIN** - Combine tables
-        """)
+query = st.text_area(
+    "Enter your SQL query below:",
+    height=120,
+    placeholder="Example: SELECT * FROM cases;",
+    key="sql_editor",
+    label_visibility="collapsed"
+)
 
-# Execute query
-if execute_button and query:
-    attempts = st.session_state.level_attempts.get(st.session_state.current_level, 0) + 1
-    st.session_state.level_attempts[st.session_state.current_level] = attempts
-    
-    with st.spinner("Executing query..."):
-        result, error = execute_query(query)
-        
-        if error:
-            st.error(error)
-        else:
-            st.session_state.query_history.append({
-                'query': query,
-                'timestamp': time.time(),
-                'level': st.session_state.current_level,
-                'attempts': attempts
-            })
-            
-            st.subheader("📊 Query Results")
-            if not result.empty:
-                st.dataframe(result, use_container_width=True)
-                st.caption(f"Returned {len(result)} rows")
-            else:
-                st.info("Query executed successfully but returned no results.")
-            
-            if st.session_state.current_level not in st.session_state.completed_levels:
-                is_correct, feedback, validated_result = game.validate_query(query, st.session_state.current_level)
-                
-                if is_correct:
-                    completion_time = game.end_level_timer() if st.session_state.time_trial_mode else None
-                    
-                    if st.session_state.time_trial_mode and completion_time:
-                        bonus_points = game.calculate_bonus_points(
-                            completion_time, attempts, st.session_state.current_streak
-                        )
-                        st.session_state.score += bonus_points
-                        
-                        if st.session_state.current_level not in st.session_state.level_completion_times:
-                            st.session_state.level_completion_times[st.session_state.current_level] = completion_time
-                        else:
-                            st.session_state.level_completion_times[st.session_state.current_level] = min(
-                                st.session_state.level_completion_times[st.session_state.current_level],
-                                completion_time
-                            )
-                        
-                        feedback = f"{feedback} 🎯 Time: {completion_time:.1f}s | Bonus: +{bonus_points - 20}!"
-                    else:
-                        st.session_state.score += 20
-                    
-                    st.session_state.current_streak += 1
-                    st.session_state.completed_levels.add(st.session_state.current_level)
-                    
-                    if st.session_state.player_name:
-                        save_score_to_leaderboard(
-                            st.session_state.player_name,
-                            st.session_state.score,
-                            st.session_state.current_level,
-                            completion_time or 0,
-                            attempts
-                        )
-                    
-                    if st.session_state.race_mode and st.session_state.race_session:
-                        race_result = multiplayer.complete_level(
-                            st.session_state.race_session,
-                            st.session_state.player_name,
-                            st.session_state.current_level,
-                            completion_time or 0
-                        )
-                        if race_result['finished']:
-                            st.success(f"🏆 RACE FINISHED! You placed #{race_result['rank']}!")
-                            st.balloons()
-                    
-                    st.markdown(f"""
-                    <div class="success-box">
-                        <h3>🎉 Case Solved!</h3>
-                        <p>{feedback}</p>
-                        <p>✨ Score: {st.session_state.score} | 🔥 Streak: {st.session_state.current_streak}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if st.session_state.current_level < 5:
-                        st.session_state.current_level += 1
-                        st.balloons()
-                        st.success("🎉 Level Complete! Moving to next challenge...")
-                        time.sleep(2)
-                        st.rerun()
-                    else:
-                        total_time = time.time() - game.session_start_time if st.session_state.time_trial_mode else None
-                        st.markdown(f"""
-                        <div class="success-box">
-                            <h2>🏆 CONGRATULATIONS, MASTER DETECTIVE!</h2>
-                            <p>Final Score: {st.session_state.score} points</p>
-                            {f'<p>Total Time: {total_time:.1f} seconds</p>' if total_time else ''}
-                            <p>Final Streak: {st.session_state.current_streak}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        st.balloons()
-                else:
-                    if st.session_state.current_streak > 0:
-                        st.session_state.current_streak = 0
-                        st.warning("💔 Streak broken! Try again to rebuild it.")
-                    
-                    st.markdown(f"""
-                    <div class="hint-box">
-                        <h3>⚠️ Not Quite Right</h3>
-                        <p>{feedback}</p>
-                        <p>💡 Attempts: {attempts}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if attempts > 2:
-                        st.info("💡 Check the 'Database Explorer' to see table structures!")
-                    if attempts > 4:
-                        with st.expander("🔍 Show Expected Query"):
-                            st.code(level['expected_query'], language='sql')
-            else:
-                st.info("✅ Level already completed! Move to next level or replay for practice.")
+# Buttons row
+col1, col2, col3, col4 = st.columns(4)
 
-# Level progress visualization
-st.markdown("---")
-st.subheader("🎯 Case Files Progress")
+with col1:
+    execute_button = st.button("🚀 Execute Query", type="primary", use_container_width=True)
 
-cols = st.columns(5)
-for i in range(1, 6):
-    with cols[i-1]:
-        if i in st.session_state.completed_levels:
-            time_taken = st.session_state.level_completion_times.get(i, None)
-            time_text = f"⏱️ {time_taken:.1f}s" if time_taken else ""
-            st.markdown(f"""
-            <div style="text-align: center;">
-                <div style="background-color: #28a745; border-radius: 50%; width: 50px; height: 50px; margin: 0 auto; display: flex; align-items: center; justify-content: center;">
-                    <span style="color: white; font-size: 24px;">✓</span>
-                </div>
-                <p><strong>Level {i}</strong><br>{time_text}</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div style="text-align: center;">
-                <div style="background-color: #6c757d; border-radius: 50%; width: 50px; height: 50px; margin: 0 auto; display: flex; align-items: center; justify-content: center;">
-                    <span style="color: white; font-size: 24px;">{i}</span>
-                </div>
-                <p><strong>Level {i}</strong></p>
-            </div>
-            """, unsafe_allow_html=True)
+with col2:
+    if st.button("💡 Get Hint", use_container_width=True):
+        hint = game.get_next_hint(st.session_state.current_level, query)
+        st.info(hint)
 
-# Competitive statistics
-if st.session_state.competitive_mode and st.session_state.level_completion_times:
-    st.markdown("---")
-    st.subheader("📊 Performance Stats")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        total_time = sum(st.session_state.level_completion_times.values())
-        st.metric("Total Time", f"{total_time:.1f}s")
-    with col2:
-        total_attempts = sum(st.session_state.level_attempts.values())
-        st.metric("Total Attempts", total_attempts)
-    with col3:
-        avg_time = total_time / len(st.session_state.level_completion_times)
-        st.metric("Avg Level Time", f"{avg_time:.1f}s")
+with col3:
+    if st.button("🔄 Reset Level", use_container_width=True):
+        if st.session_state.current_level in st.session_state.completed_levels:
+            st.session_state.completed_levels.remove(st.session_state.current_level)
+        st.session_state.current_streak = 0
+        st.session_state.score = max(0, st.session_state.score - 10)
+        st.success("Level reset!")
+        st.rerun()
 
-# Query history
-with st.expander("📜 Query History"):
-    if st.session_state.query_history:
-        for q in reversed(st.session_state.query_history[-5:]):
-            st.code(q['query'], language='sql')
-            st.caption(f"Level {q['level']} - Attempt {q['attempts']}")
-            st.markdown("---")
-    else:
-        st.info("No queries executed yet.")
-
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666;">
-    <p>🕵️ SQL Detective Academy - Learn SQL by solving crimes!</p>
-    <p>🏆 Compete on leaderboard | ⏱️ Beat your best times | 👥 Race against friends</p>
-</div>
-""", unsafe_allow_html=True)
+with col4:
+    if st.session_state.time_trial_mode and st.session_state.level_completion_times:
+        if st.button("⏱️ Best Times", use_container_width=True):
+            times_text = "**Your Best Times:**\n"
+            for lvl, t in st.session_state.level_completion_times.items():
+                times_text += f"Level {lvl}: {t:.1f}s\n"
+            st.info(times_text)
