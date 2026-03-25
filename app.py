@@ -307,4 +307,11 @@ with st.expander("📖 SQL Reference - Click to expand"):
     ```sql
     SELECT * FROM cases;  -- Select all columns
     SELECT case_name, crime_type FROM cases;  -- Select specific columns
-                """, unsafe_allow_html=True)
+    SELECT * FROM cases WHERE solved = 0;
+    SELECT * FROM cases WHERE priority = 'High' AND crime_type = 'Murder';
+    SELECT * FROM cases ORDER BY date_opened DESC;
+    SELECT * FROM cases ORDER BY priority ASC; 
+    SELECT * FROM cases LIMIT 3;
+    SELECT crime_type, COUNT(*) FROM cases GROUP BY crime_type;
+     SELECT * FROM evidence JOIN cases ON evidence.case_id = cases.case_id;
+                """)                                                          
