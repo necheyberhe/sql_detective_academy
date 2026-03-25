@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import time
 from database import (create_database, execute_query, get_table_info, 
-                      save_score_to_leaderboard, get_leaderboard, get_player_rank,
-                      create_multiplayer_session, join_multiplayer_session, get_multiplayer_session)
-from game_logic import SQLGame, MultiplayerRace
+                      save_score_to_leaderboard, get_leaderboard, get_player_rank)
+from game_logic import SQLGame
 
 # Page configuration
 st.set_page_config(
@@ -103,12 +102,11 @@ st.markdown("""
     .level-completed {
         background-color: #28a745;
     }
-    .sql-editor textarea {
-        font-family: 'Courier New', monospace;
-        font-size: 14px;
-    }
-    .stTextArea textarea {
-        font-family: 'Courier New', monospace;
+    .result-table {
+        margin-top: 1rem;
+        border: 1px solid #ddd;
+        border-radius: 0.5rem;
+        overflow: auto;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -121,14 +119,10 @@ def init_session_state():
         st.session_state.current_level = 1
     if 'score' not in st.session_state:
         st.session_state.score = 0
-    if 'hints_used' not in st.session_state:
-        st.session_state.hints_used = 0
     if 'query_history' not in st.session_state:
         st.session_state.query_history = []
     if 'player_name' not in st.session_state:
         st.session_state.player_name = ""
-    if 'competitive_mode' not in st.session_state:
-        st.session_state.competitive_mode = False
     if 'time_trial_mode' not in st.session_state:
         st.session_state.time_trial_mode = False
     if 'level_attempts' not in st.session_state:
@@ -137,17 +131,10 @@ def init_session_state():
         st.session_state.level_completion_times = {}
     if 'current_streak' not in st.session_state:
         st.session_state.current_streak = 0
-    if 'race_mode' not in st.session_state:
-        st.session_state.race_mode = False
-    if 'multiplayer_session' not in st.session_state:
-        st.session_state.multiplayer_session = None
-    if 'race_session' not in st.session_state:
-        st.session_state.race_session = None
 
 # Initialize
 create_database()
 game = SQLGame()
-multiplayer = MultiplayerRace()
 init_session_state()
 
 # Sidebar
@@ -157,8 +144,7 @@ with st.sidebar:
     
     # Player name input
     if not st.session_state.player_name:
-        player_name_input = st.text_input("Enter your detective name:", 
-                                           placeholder="Sherlock Holmes")
+        player_name_input = st.text_input("Enter your detective name:", placeholder="Sherlock Holmes")
         if player_name_input:
             st.session_state.player_name = player_name_input
             st.rerun()
@@ -174,14 +160,12 @@ with st.sidebar:
     st.subheader("🏆 Game Mode")
     mode = st.radio(
         "Choose your mode:",
-        ["🎯 Solo Mode", "⏱️ Time Trial", "👥 Multiplayer Race"],
+        ["🎯 Solo Mode", "⏱️ Time Trial"],
         label_visibility="collapsed"
     )
     
     if mode == "⏱️ Time Trial":
         st.session_state.time_trial_mode = True
-        st.session_state.competitive_mode = True
-        st.session_state.race_mode = False
         if st.button("⏱️ Start Time Trial", type="primary"):
             game.start_time_trial()
             st.session_state.score = 0
@@ -191,52 +175,8 @@ with st.sidebar:
             st.session_state.level_completion_times = {}
             st.success("Time Trial Started! Complete all levels as fast as possible!")
             st.rerun()
-    
-    elif mode == "👥 Multiplayer Race":
-        st.session_state.race_mode = True
-        st.session_state.competitive_mode = True
-        st.session_state.time_trial_mode = False
-        
-        race_action = st.radio("", ["🏁 Create Race", "🔗 Join Race"])
-        
-        if race_action == "🏁 Create Race":
-            if st.button("Create New Race", type="primary"):
-                session_id = multiplayer.create_race(st.session_state.player_name or "Detective")
-                st.session_state.race_session = session_id
-                st.success(f"Race created! Code: **{session_id}**")
-                st.info("Share this code with friends to join!")
-                
-                if st.button("Start Race"):
-                    multiplayer.start_race(session_id)
-                    game.start_time_trial()
-                    st.session_state.score = 0
-                    st.session_state.completed_levels = set()
-                    st.session_state.current_level = 1
-                    st.rerun()
-        
-        else:
-            session_code = st.text_input("Enter Race Code:")
-            if st.button("Join Race") and session_code:
-                if multiplayer.join_race(session_code, st.session_state.player_name or "Detective"):
-                    st.session_state.race_session = session_code
-                    st.success("Joined race! Waiting for host to start...")
-                else:
-                    st.error("Race not found!")
-        
-        # Show race status
-        if st.session_state.race_session:
-            status = multiplayer.get_race_status(st.session_state.race_session)
-            if status:
-                st.write("**Race Status:**")
-                for player, completed in status['completed'].items():
-                    st.write(f"{player}: {completed}/5 levels")
-                if status.get('started', False):
-                    st.info("🏁 Race in progress!")
-    
     else:
         st.session_state.time_trial_mode = False
-        st.session_state.competitive_mode = False
-        st.session_state.race_mode = False
     
     st.markdown("---")
     
@@ -250,11 +190,6 @@ with st.sidebar:
     if st.session_state.current_streak > 0:
         st.markdown(f'<div class="streak-badge">🔥 {st.session_state.current_streak} Level Streak!</div>', 
                    unsafe_allow_html=True)
-    
-    # Timer display for time trial
-    if st.session_state.time_trial_mode and game.session_start_time:
-        elapsed = time.time() - game.session_start_time
-        st.markdown(f'<div class="timer">⏱️ {elapsed:.1f}s</div>', unsafe_allow_html=True)
     
     st.markdown("---")
     
@@ -314,8 +249,6 @@ st.title("🕵️ SQL Detective Academy")
 # Mode indicator
 if st.session_state.time_trial_mode:
     st.info("⏱️ **TIME TRIAL MODE ACTIVE** - Complete levels as fast as possible for bonus points!")
-elif st.session_state.race_mode:
-    st.info("🏁 **RACE MODE ACTIVE** - Compete against other detectives!")
 
 # Current level display
 level = game.levels[st.session_state.current_level]
@@ -339,13 +272,14 @@ st.caption(f"Attempts: {attempts}")
 query = st.text_area(
     "Enter your SQL query below:",
     height=120,
+    value="SELECT * FROM cases;",  # Default value for testing
     placeholder="Example: SELECT * FROM cases;",
     key="sql_editor",
     label_visibility="collapsed"
 )
 
 # Buttons row
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     execute_button = st.button("🚀 Execute Query", type="primary", use_container_width=True)
@@ -364,10 +298,13 @@ with col3:
         st.success("Level reset!")
         st.rerun()
 
-with col4:
-    if st.session_state.time_trial_mode and st.session_state.level_completion_times:
-        if st.button("⏱️ Best Times", use_container_width=True):
-            times_text = "**Your Best Times:**\n"
-            for lvl, t in st.session_state.level_completion_times.items():
-                times_text += f"Level {lvl}: {t:.1f}s\n"
-            st.info(times_text)
+# SQL Reference
+with st.expander("📖 SQL Reference - Click to expand"):
+    st.markdown("""
+    ### Basic SQL Commands
+    
+    **SELECT** - Retrieve data from a table
+    ```sql
+    SELECT * FROM cases;  -- Select all columns
+    SELECT case_name, crime_type FROM cases;  -- Select specific columns
+                """, unsafe_allow_html=True)
