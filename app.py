@@ -2,14 +2,19 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import time
+import json
+import uuid
+import os
 
-# ============ DATABASE SETUP ============
+# Import AI hints module
+from ai_hints import AIHintGenerator
+
+# ============ DATABASE SETUP (same as before) ============
 def create_database():
-    """Create and populate the database"""
     conn = sqlite3.connect('crime_academy.db')
     cursor = conn.cursor()
     
-    # Create cases table
+    # Create tables
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS cases (
         case_id INTEGER PRIMARY KEY,
@@ -23,7 +28,6 @@ def create_database():
     )
     ''')
     
-    # Create evidence table for JOIN exercises
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS evidence (
         evidence_id INTEGER PRIMARY KEY,
@@ -34,10 +38,8 @@ def create_database():
     )
     ''')
     
-    # Check if cases data exists
     cursor.execute("SELECT COUNT(*) FROM cases")
     if cursor.fetchone()[0] == 0:
-        # Insert sample cases data
         cases_data = [
             (1, "The Midnight Burglary", "Burglary", "2024-01-15", "High", 0, "Downtown", "Jewelry stolen from vault"),
             (2, "Park Avenue Murder", "Murder", "2024-01-20", "High", 0, "Park Avenue", "Victim found in apartment"),
@@ -53,7 +55,6 @@ def create_database():
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', cases_data)
         
-        # Insert evidence data
         evidence_data = [
             (1, 1, "Fingerprints on window", "Physical", "2024-01-16"),
             (2, 1, "Security footage", "Video", "2024-01-16"),
@@ -68,13 +69,11 @@ def create_database():
         INSERT INTO evidence (evidence_id, case_id, description, evidence_type, collected_date)
         VALUES (?, ?, ?, ?, ?)
         ''', evidence_data)
-        
         conn.commit()
     
     conn.close()
 
 def execute_query(query):
-    """Execute SQL query and return results"""
     try:
         conn = sqlite3.connect('crime_academy.db')
         df = pd.read_sql_query(query, conn)
@@ -83,7 +82,7 @@ def execute_query(query):
     except Exception as e:
         return None, str(e)
 
-# ============ LEVELS DEFINITION ============
+# ============ LEVELS ============
 levels = {
     1: {
         'name': 'The First Clue',
@@ -93,28 +92,28 @@ levels = {
         'validation': 'count_rows',
         'hint': 'Use SELECT * FROM cases to see all columns and rows',
         'concept': 'Basic SELECT statements',
-        'success': 'Great detective! You\'ve accessed the case files.'
+        'success': 'Great detective! You\'ve accessed the case files.',
+        'tip': 'SELECT * FROM cases;'
     },
     2: {
         'name': 'Following the Evidence',
         'description': 'Filter cases to find specific crimes',
         'task': 'Find all unsolved murder cases',
-        'expected_crime': 'Murder',
-        'expected_solved': 0,
         'validation': 'filter',
         'hint': 'Use WHERE to filter solved = 0 and crime_type = "Murder"',
         'concept': 'WHERE clause for filtering',
-        'success': 'Excellent! You\'ve identified the active murder cases.'
+        'success': 'Excellent! You\'ve identified the active murder cases.',
+        'tip': "SELECT * FROM cases WHERE solved = 0 AND crime_type = 'Murder';"
     },
     3: {
         'name': 'Prioritizing Cases',
         'description': 'Sort and limit results to focus on top priorities',
         'task': 'Find the 3 most recent high-priority cases',
-        'expected_count': 3,
         'validation': 'order_limit',
         'hint': 'Use ORDER BY date_opened DESC and LIMIT 3, with WHERE priority = "High"',
         'concept': 'ORDER BY and LIMIT',
-        'success': 'Perfect prioritization! These cases need immediate attention.'
+        'success': 'Perfect prioritization! These cases need immediate attention.',
+        'tip': "SELECT * FROM cases WHERE priority = 'High' ORDER BY date_opened DESC LIMIT 3;"
     },
     4: {
         'name': 'Crime Statistics',
@@ -123,7 +122,8 @@ levels = {
         'validation': 'aggregation',
         'hint': 'Use GROUP BY crime_type and COUNT(*) to count cases per type',
         'concept': 'GROUP BY and aggregations',
-        'success': 'You\'re thinking like a data analyst! These statistics reveal patterns.'
+        'success': 'You\'re thinking like a data analyst! These statistics reveal patterns.',
+        'tip': 'SELECT crime_type, COUNT(*) as case_count FROM cases GROUP BY crime_type;'
     },
     5: {
         'name': 'Connecting the Dots',
@@ -132,7 +132,8 @@ levels = {
         'validation': 'join',
         'hint': 'Use JOIN to connect evidence table with cases table using case_id',
         'concept': 'JOIN operations',
-        'success': 'Master detective! You\'ve connected evidence to cases perfectly.'
+        'success': 'Master detective! You\'ve connected evidence to cases perfectly.',
+        'tip': 'SELECT e.description as evidence, c.case_name FROM evidence e JOIN cases c ON e.case_id = c.case_id;'
     }
 }
 
@@ -145,6 +146,14 @@ if 'score' not in st.session_state:
     st.session_state.score = 0
 if 'level_attempts' not in st.session_state:
     st.session_state.level_attempts = {}
+if 'query_history' not in st.session_state:
+    st.session_state.query_history = []
+if 'player_name' not in st.session_state:
+    st.session_state.player_name = ""
+if 'use_ai_hints' not in st.session_state:
+    st.session_state.use_ai_hints = False
+if 'ai_hint_generator' not in st.session_state:
+    st.session_state.ai_hint_generator = AIHintGenerator()
 
 # Initialize database
 create_database()
@@ -152,26 +161,21 @@ create_database()
 # ============ PAGE CONFIG ============
 st.set_page_config(page_title="SQL Detective Academy", page_icon="🕵️", layout="wide")
 
-# ============ IMPROVED VALIDATION FUNCTION ============
+# ============ VALIDATION FUNCTION ============
 def validate_level(level_num, result, query):
-    """Validate if the query result matches level requirements"""
     level = levels[level_num]
     
     if result.empty:
         return False, "Query returned no results. Try again!"
     
-    # Level 1: SELECT * FROM cases
     if level_num == 1:
         if len(result) == 8:
             return True, level['success']
         else:
             return False, f"Expected 8 cases, but got {len(result)}. {level['hint']}"
     
-    # Level 2: WHERE solved = 0 AND crime_type = 'Murder'
     elif level_num == 2:
-        # Check if result has the right columns
         if 'solved' in result.columns and 'crime_type' in result.columns:
-            # Check if all rows are unsolved murder cases
             if len(result) > 0:
                 all_unsolved = all(result['solved'] == 0)
                 all_murder = all(result['crime_type'] == 'Murder')
@@ -179,32 +183,23 @@ def validate_level(level_num, result, query):
                     return True, level['success']
         return False, f"Make sure to filter for unsolved (solved = 0) murder cases. {level['hint']}"
     
-    # Level 3: WHERE priority = 'High' ORDER BY date_opened DESC LIMIT 3
     elif level_num == 3:
-        # Check row count
         if len(result) <= 3:
-            # Check if all are high priority
             if 'priority' in result.columns and all(result['priority'] == 'High'):
-                # Check if sorted by date descending
                 if 'date_opened' in result.columns:
                     dates = pd.to_datetime(result['date_opened'])
                     if dates.is_monotonic_decreasing:
                         return True, level['success']
         return False, f"Need High priority cases, ordered by date (newest first), limited to 3. {level['hint']}"
     
-    # Level 4: GROUP BY with aggregation
     elif level_num == 4:
-        # Check if query uses GROUP BY and has count column
         if 'crime_type' in result.columns:
-            # Check if there's a count column (could be named count, case_count, etc)
             count_cols = [col for col in result.columns if 'count' in col.lower() or col == 'COUNT(*)']
             if count_cols:
                 return True, level['success']
         return False, f"Use GROUP BY crime_type and COUNT(*) to count cases per type. {level['hint']}"
     
-    # Level 5: JOIN operation
     elif level_num == 5:
-        # Check if result has evidence and case name
         has_evidence = any(col in result.columns for col in ['evidence', 'description'])
         has_case = any(col in result.columns for col in ['case_name', 'cases.case_name'])
         
@@ -223,9 +218,48 @@ with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/1995/1995571.png", width=80)
     st.markdown("## 🕵️ SQL Academy")
     
-    st.markdown("---")
-    st.markdown("### 📊 Your Progress")
+    # Player name input
+    if not st.session_state.player_name:
+        player_name_input = st.text_input("Enter your detective name:", placeholder="Sherlock Holmes")
+        if player_name_input:
+            st.session_state.player_name = player_name_input
+            st.rerun()
+    else:
+        st.success(f"Welcome, {st.session_state.player_name}!")
     
+    st.markdown("---")
+    
+    # Game mode selection
+    st.markdown("### 🎮 Game Mode")
+    game_mode = st.radio("Select mode:", ["🎯 Solo Mode", "👥 Multiplayer Race"], label_visibility="collapsed")
+    
+    # AI Hints Toggle
+    st.markdown("---")
+    st.markdown("### 🤖 AI Assistant")
+    use_ai = st.toggle("✨ Enable AI-Powered Hints", value=st.session_state.use_ai_hints)
+    st.session_state.use_ai_hints = use_ai
+    
+    if use_ai:
+        if not st.session_state.ai_hint_generator.enabled:
+            api_key_input = st.text_input("OpenAI API Key (optional):", type="password", 
+                                           placeholder="sk-...")
+            if api_key_input:
+                st.session_state.ai_hint_generator = AIHintGenerator(api_key_input)
+                if st.session_state.ai_hint_generator.enabled:
+                    st.success("✅ AI hints enabled!")
+                else:
+                    st.warning("⚠️ Invalid API key. Using fallback hints.")
+            else:
+                st.info("💡 No API key. Get one at openai.com")
+                st.caption("Using basic hints. AI hints provide personalized feedback!")
+        else:
+            st.success("🤖 AI hints active!")
+            st.caption("Personalized hints for your queries")
+    
+    st.markdown("---")
+    
+    # Progress tracking
+    st.markdown("### 📊 Your Progress")
     completed_count = len(st.session_state.completed_levels)
     progress = completed_count / 5
     st.progress(progress)
@@ -255,9 +289,8 @@ with st.sidebar:
 # ============ MAIN CONTENT ============
 st.title("🕵️ SQL Detective Academy")
 
-# Check if all levels are completed
+# Check completion
 completed_count = len(st.session_state.completed_levels)
-
 if completed_count == 5:
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
@@ -280,24 +313,9 @@ if completed_count == 5:
         st.session_state.score = 0
         st.session_state.level_attempts = {}
         st.rerun()
-    
-    st.markdown("---")
-    st.markdown("### 🎯 Case Files Progress")
-    cols = st.columns(5)
-    for i in range(1, 6):
-        with cols[i-1]:
-            st.markdown(f"""
-            <div style="text-align: center;">
-                <div style="background-color: #28a745; border-radius: 50%; width: 60px; height: 60px; 
-                            margin: 0 auto; display: flex; align-items: center; justify-content: center;">
-                    <span style="color: white; font-size: 28px;">✓</span>
-                </div>
-                <p><strong>Level {i}</strong><br>✅ Completed</p>
-            </div>
-            """, unsafe_allow_html=True)
     st.stop()
 
-# ============ CURRENT LEVEL DISPLAY ============
+# Current level display
 current_level = st.session_state.current_level
 level = levels[current_level]
 
@@ -311,28 +329,20 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ============ SQL INPUT AREA ============
+# SQL Input Area
 st.markdown("### ✍️ Write Your SQL Query")
 
 attempts = st.session_state.level_attempts.get(current_level, 0)
 st.caption(f"Attempts: {attempts}")
 
-default_queries = {
-    1: "SELECT * FROM cases;",
-    2: "SELECT * FROM cases WHERE solved = 0 AND crime_type = 'Murder';",
-    3: "SELECT * FROM cases WHERE priority = 'High' ORDER BY date_opened DESC LIMIT 3;",
-    4: "SELECT crime_type, COUNT(*) as case_count FROM cases GROUP BY crime_type;",
-    5: "SELECT e.description as evidence, c.case_name FROM evidence e JOIN cases c ON e.case_id = c.case_id;"
-}
-
 query = st.text_area(
     "Enter your SQL query:",
     height=100,
-    value=default_queries.get(current_level, ""),
+    value=level['tip'],
     key="sql_input"
 )
 
-# ============ BUTTONS ============
+# Buttons
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -346,31 +356,46 @@ with col1:
                 
                 if error:
                     st.error(f"❌ SQL Error: {error}")
+                    
+                    # Store error for AI hints
+                    st.session_state.query_history.append({
+                        'query': query,
+                        'timestamp': time.time(),
+                        'level': current_level,
+                        'attempts': attempts,
+                        'error': error
+                    })
                 else:
                     st.markdown("### 📊 Query Results")
                     if not result.empty:
                         st.dataframe(result, use_container_width=True)
                         st.caption(f"✅ Returned {len(result)} rows")
                         
-                        # Check if level not completed yet
+                        # Store result for AI hints
+                        st.session_state.query_history.append({
+                            'query': query,
+                            'timestamp': time.time(),
+                            'level': current_level,
+                            'attempts': attempts,
+                            'result_rows': len(result),
+                            'result_columns': list(result.columns)
+                        })
+                        
                         if current_level not in st.session_state.completed_levels:
                             is_correct, feedback = validate_level(current_level, result, query)
                             
                             if is_correct:
-                                # Add points
                                 st.session_state.score += 20
                                 st.session_state.completed_levels.add(current_level)
                                 st.balloons()
                                 st.success(f"🎉 {feedback} +20 points!")
                                 
-                                # Auto-advance to next level
                                 if current_level < 5:
                                     st.session_state.current_level += 1
                                     st.info(f"Moving to Level {st.session_state.current_level}...")
                                     time.sleep(1.5)
                                     st.rerun()
                                 else:
-                                    # All levels complete
                                     time.sleep(1)
                                     st.rerun()
                             else:
@@ -388,7 +413,40 @@ with col1:
 
 with col2:
     if st.button("💡 Get Hint", use_container_width=True):
-        st.info(f"💡 Hint: {level['hint']}")
+        # Check if AI hints are enabled
+        if st.session_state.use_ai_hints and st.session_state.ai_hint_generator.enabled:
+            with st.spinner("🤖 AI analyzing your query..."):
+                # Get the last attempt for this level
+                last_attempt = None
+                for hist in reversed(st.session_state.query_history):
+                    if hist['level'] == current_level:
+                        last_attempt = hist
+                        break
+                
+                # Build result info for AI
+                result_info = None
+                error = None
+                if last_attempt:
+                    if 'error' in last_attempt:
+                        error = last_attempt['error']
+                    elif 'result_rows' in last_attempt:
+                        result_info = {
+                            'expected': f"Correct solution for Level {current_level}",
+                            'actual': f"Returned {last_attempt['result_rows']} rows"
+                        }
+                
+                # Generate AI hint
+                ai_hint = st.session_state.ai_hint_generator.generate_hint(
+                    user_query=query if query else level['tip'],
+                    level_num=current_level,
+                    level_info=level,
+                    error=error,
+                    result_info=result_info
+                )
+                st.info(ai_hint)
+        else:
+            # Use standard hint
+            st.info(f"💡 Hint: {level['hint']}")
 
 with col3:
     if st.button("🔄 Reset Level", use_container_width=True):
@@ -399,7 +457,7 @@ with col3:
         time.sleep(1)
         st.rerun()
 
-# ============ PROGRESS VISUALIZATION ============
+# Progress Visualization
 st.markdown("---")
 st.markdown("### 🎯 Case Files Progress")
 
@@ -426,7 +484,6 @@ for i in range(1, 6):
                 <p><strong>Level {i}</strong></p>
             </div>
             """, unsafe_allow_html=True)
-
 
 # SQL Reference
 with st.expander("📖 SQL Reference - Click to expand"):
