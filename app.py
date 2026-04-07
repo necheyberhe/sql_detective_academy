@@ -8,7 +8,12 @@ import os
 
 # Import AI hints module
 from ai_hints import AIHintGenerator
-
+from multiplayer import (
+    create_race_session, join_race_session, start_race_session,
+    update_race_progress, get_race_status,
+    create_guessing_game, lock_guessing_query, join_guessing_game,
+    submit_guess, get_guessing_game
+)
 # ============ DATABASE SETUP (same as before) ============
 def create_database():
     conn = sqlite3.connect('crime_academy.db')
@@ -240,253 +245,212 @@ with st.sidebar:
     )
     
     # ============ MODE 1: RACE MODE (Two players race to solve SQL challenges) ============
-    if game_mode == "🏁 Race Mode":
-        st.session_state.game_mode = 'race'
+if game_mode == "🏁 Race Mode":
+    st.session_state.game_mode = 'race'
+    
+    st.markdown("---")
+    st.markdown("### 🏁 Race Mode")
+    st.caption("Race against another player to solve all 5 SQL challenges!")
+    
+    race_action = st.radio("", ["🏁 Create Race", "🔗 Join Race"], label_visibility="collapsed")
+    
+    if race_action == "🏁 Create Race":
+        if st.button("🏁 Create New Race", type="primary", use_container_width=True):
+            session_id = create_race_session(st.session_state.player_name)
+            st.session_state.race_session_id = session_id
+            st.session_state.race_host = True
+            st.success(f"✅ Race created! Code: **{session_id}**")
+            st.info("Share this code with your opponent!")
         
-        st.markdown("---")
-        st.markdown("### 🏁 Race Mode")
-        st.caption("Race against another player to solve all 5 SQL challenges!")
-        
-        race_action = st.radio("", ["🏁 Create Race", "🔗 Join Race"], label_visibility="collapsed")
-        
-        if race_action == "🏁 Create Race":
-            if st.button("🏁 Create New Race", type="primary", use_container_width=True):
-                import uuid
-                session_id = str(uuid.uuid4())[:8].upper()
-                st.session_state.race_session_id = session_id
-                st.session_state.race_host = True
+        if st.session_state.get('race_session_id'):
+            if st.button("🚦 Start Race", use_container_width=True):
+                start_race_session(st.session_state.race_session_id)
+                st.session_state.race_started = True
+                st.session_state.race_start_time = time.time()
+                st.session_state.completed_levels = set()
+                st.session_state.current_level = 1
+                st.session_state.score = 0
+                st.success("🏁 Race started! First to complete all 5 levels wins!")
+                st.rerun()
+    
+    else:  # Join Race
+        session_code = st.text_input("Enter Race Code:", placeholder="e.g., A1B2C3D4")
+        if st.button("🔗 Join Race", use_container_width=True) and session_code:
+            session_code = session_code.upper()
+            if join_race_session(session_code, st.session_state.player_name):
+                st.session_state.race_session_id = session_code
+                st.session_state.race_host = False
+                st.success(f"✅ Joined race: {session_code}!")
                 
-                if 'race_sessions' not in st.session_state:
-                    st.session_state.race_sessions = {}
-                
-                st.session_state.race_sessions[session_id] = {
-                    'host': st.session_state.player_name,
-                    'players': [st.session_state.player_name],
-                    'player_progress': {st.session_state.player_name: []},
-                    'status': 'waiting',
-                    'start_time': None
-                }
-                
-                st.success(f"✅ Race created! Code: **{session_id}**")
-                st.info("Share this code with your opponent!")
-                
-                if st.button("🚦 Start Race", use_container_width=True):
+                # Check if race already started
+                status = get_race_status(session_code)
+                if status and status['status'] == 'racing':
+                    st.info("🏁 Race already in progress!")
                     st.session_state.race_started = True
-                    st.session_state.race_start_time = time.time()
-                    st.session_state.race_sessions[session_id]['status'] = 'racing'
-                    st.session_state.race_sessions[session_id]['start_time'] = time.time()
-                    st.session_state.completed_levels = set()
-                    st.session_state.current_level = 1
-                    st.session_state.score = 0
-                    st.success("🏁 Race started! First to complete all 5 levels wins!")
-                    st.rerun()
-        
-        else:
-            session_code = st.text_input("Enter Race Code:", placeholder="e.g., A1B2C3D4")
-            if st.button("🔗 Join Race", use_container_width=True) and session_code:
-                session_code = session_code.upper()
-                
-                if 'race_sessions' in st.session_state and session_code in st.session_state.race_sessions:
-                    st.session_state.race_session_id = session_code
-                    
-                    if st.session_state.player_name not in st.session_state.race_sessions[session_code]['players']:
-                        st.session_state.race_sessions[session_code]['players'].append(st.session_state.player_name)
-                        st.session_state.race_sessions[session_code]['player_progress'][st.session_state.player_name] = []
-                    
-                    st.success(f"✅ Joined race: {session_code}!")
-                    
-                    if st.session_state.race_sessions[session_code]['status'] == 'racing':
-                        st.info("🏁 Race in progress! Complete levels quickly!")
-                        st.session_state.race_started = True
-                        st.session_state.race_start_time = st.session_state.race_sessions[session_code]['start_time']
-                else:
-                    st.error("❌ Race not found!")
-        
-        # Display race status
-        if st.session_state.get('race_session_id') and st.session_state.race_session_id in st.session_state.get('race_sessions', {}):
-            race = st.session_state.race_sessions[st.session_state.race_session_id]
+            else:
+                st.error("❌ Race not found or already started!")
+    
+    # Display race status
+    if st.session_state.get('race_session_id'):
+        status = get_race_status(st.session_state.race_session_id)
+        if status:
             st.markdown("---")
             st.markdown("### 🏁 Race Status")
             st.info(f"**Race Code:** `{st.session_state.race_session_id}`")
             
-            if race['status'] == 'waiting':
+            if status['status'] == 'waiting':
                 st.warning("⏳ Waiting for host to start the race...")
             else:
-                if race.get('start_time'):
-                    elapsed = time.time() - race['start_time']
-                    st.markdown(f"<div style='background: #000; color: #0f0; padding: 0.5rem; border-radius: 0.5rem; text-align: center; font-family: monospace;'>⏱️ Race Time: {elapsed:.1f}s</div>", unsafe_allow_html=True)
+                st.success("🏁 RACE IN PROGRESS!")
+                if status['start_time']:
+                    import datetime
+                    start = datetime.datetime.fromisoformat(status['start_time'])
+                    elapsed = (datetime.datetime.now() - start).total_seconds()
+                    st.markdown(f"<div style='background: #000; color: #0f0; padding: 0.5rem; border-radius: 0.5rem; text-align: center;'>⏱️ Race Time: {elapsed:.1f}s</div>", unsafe_allow_html=True)
             
             st.markdown("**Players:**")
-            for player in race['players']:
-                completed = len(race['player_progress'].get(player, []))
+            for player in status['players']:
+                completed = len(status['player_progress'].get(player, []))
+                progress_bar = "█" * completed + "░" * (5 - completed)
                 is_me = (player == st.session_state.player_name)
                 prefix = "👤 **YOU**" if is_me else "👤"
-                st.write(f"{prefix} {player}: {completed}/5 levels")
+                st.write(f"{prefix} {player}: {progress_bar} ({completed}/5)")
             
             # Update progress
-            if race['status'] == 'racing' and st.session_state.get('completed_levels'):
-                st.session_state.race_sessions[st.session_state.race_session_id]['player_progress'][st.session_state.player_name] = list(st.session_state.completed_levels)
+            if status['status'] == 'racing' and st.session_state.completed_levels:
+                update_race_progress(st.session_state.race_session_id, st.session_state.player_name, st.session_state.completed_levels)
+
+elif game_mode == "🎭 Query Guessing Game":
+    st.session_state.game_mode = 'guessing'
     
-    # ============ MODE 2: QUERY GUESSING GAME (One player writes, other guesses) ============
-    elif game_mode == "🎭 Query Guessing Game":
-        st.session_state.game_mode = 'guessing'
+    st.markdown("---")
+    st.markdown("### 🎭 Query Guessing Game")
+    st.caption("One player writes a SQL query, the other guesses what it returns!")
+    
+    guessing_action = st.radio("", ["✍️ Be the Writer", "🎯 Be the Guesser"], label_visibility="collapsed")
+    
+    if guessing_action == "✍️ Be the Writer":
+        if st.button("📝 Create Game", type="primary", use_container_width=True):
+            session_id = create_guessing_game(st.session_state.player_name)
+            st.session_state.guessing_session_id = session_id
+            st.session_state.guessing_role = 'writer'
+            st.success(f"✅ Game created! Code: **{session_id}**")
+            st.info("Share this code with the guesser!")
         
-        st.markdown("---")
-        st.markdown("### 🎭 Query Guessing Game")
-        st.caption("One player writes a SQL query, the other guesses what it returns!")
-        
-        guessing_action = st.radio("", ["✍️ Create Game (Writer)", "🎯 Join Game (Guesser)"], label_visibility="collapsed")
-        
-        if guessing_action == "✍️ Create Game (Writer)":
-            if st.button("📝 Create Guessing Game", type="primary", use_container_width=True):
-                import uuid
-                game_id = str(uuid.uuid4())[:8].upper()
-                st.session_state.guessing_game_id = game_id
-                st.session_state.guessing_role = 'writer'
-                
-                if 'guessing_games' not in st.session_state:
-                    st.session_state.guessing_games = {}
-                
-                st.session_state.guessing_games[game_id] = {
-                    'writer': st.session_state.player_name,
-                    'guesser': None,
-                    'query': None,
-                    'result_description': None,
-                    'guesses': [],
-                    'status': 'waiting'
-                }
-                
-                st.success(f"✅ Game created! Code: **{game_id}**")
-                st.info("Share this code with the guesser!")
-                
-                # Query input for writer
-                st.markdown("---")
-                st.markdown("### ✍️ Write Your Secret Query")
-                st.caption("Write a SQL query that the guesser will try to figure out!")
-                
-                secret_query = st.text_area(
-                    "Your SQL query (kept secret):",
-                    height=100,
-                    placeholder="SELECT * FROM cases WHERE solved = 0;",
-                    key="secret_query"
-                )
-                
-                if st.button("🔒 Lock Query & Start Game", use_container_width=True) and secret_query:
-                    # Execute the query to get result description
-                    result, error = execute_query(secret_query)
-                    
-                    if error:
-                        st.error(f"Error in query: {error}")
-                    else:
-                        # Store the query and result description
-                        st.session_state.guessing_games[game_id]['query'] = secret_query
-                        st.session_state.guessing_games[game_id]['result_description'] = {
-                            'row_count': len(result),
-                            'columns': list(result.columns) if not result.empty else [],
-                            'sample': result.head(3).to_dict() if not result.empty else {}
-                        }
-                        st.session_state.guessing_games[game_id]['status'] = 'ready'
-                        st.success("✅ Game locked! Share the code with the guesser.")
-                        st.info("The guesser will try to figure out what this query returns!")
-        
-        else:  # Join as guesser
-            game_code = st.text_input("Enter Game Code:", placeholder="e.g., A1B2C3D4")
+        if st.session_state.get('guessing_session_id') and st.session_state.get('guessing_role') == 'writer':
+            st.markdown("---")
+            st.markdown("### ✍️ Write Your Secret Query")
+            st.caption("Write a SQL query that the guesser will try to figure out!")
             
-            if st.button("🎯 Join as Guesser", use_container_width=True) and game_code:
-                game_code = game_code.upper()
+            secret_query = st.text_area(
+                "Your SQL query (kept secret):",
+                height=100,
+                placeholder="SELECT * FROM cases WHERE solved = 0;",
+                key="secret_query"
+            )
+            
+            if st.button("🔒 Lock Query & Start Game", use_container_width=True) and secret_query:
+                result, error = execute_query(secret_query)
                 
-                if 'guessing_games' in st.session_state and game_code in st.session_state.guessing_games:
-                    game = st.session_state.guessing_games[game_code]
-                    
-                    if game['status'] == 'ready':
-                        st.session_state.guessing_game_id = game_code
-                        st.session_state.guessing_role = 'guesser'
-                        
-                        st.success(f"✅ Joined game: {game_code}!")
-                        st.info(f"Writer: {game['writer']}")
-                        
-                        # Show clues to guesser
-                        st.markdown("---")
-                        st.markdown("### 🔍 Clues")
-                        st.markdown(f"**Row count:** {game['result_description']['row_count']} rows")
-                        st.markdown(f"**Columns:** {', '.join(game['result_description']['columns'])}")
-                        
-                        if game['result_description']['sample']:
-                            st.markdown("**Sample data (first 3 rows):**")
-                            sample_df = pd.DataFrame(game['result_description']['sample'])
-                            st.dataframe(sample_df, use_container_width=True)
-                        
-                        st.markdown("---")
-                        st.markdown("### 💭 Your Guess")
-                        st.caption("What SQL query do you think the writer wrote?")
-                        
-                        guess_query = st.text_area(
-                            "Enter your guess:",
-                            height=100,
-                            placeholder="SELECT * FROM cases WHERE ...",
-                            key="guess_query"
-                        )
-                        
-                        if st.button("🔍 Submit Guess", use_container_width=True) and guess_query:
-                            # Execute guess query
-                            result, error = execute_query(guess_query)
-                            
-                            if error:
-                                st.error(f"Error: {error}")
-                            else:
-                                # Compare results with original
-                                original = game['result_description']
-                                
-                                # Check if guess is correct
-                                is_correct = (
-                                    len(result) == original['row_count'] and
-                                    list(result.columns) == original['columns']
-                                )
-                                
-                                if is_correct:
-                                    st.balloons()
-                                    st.success("🎉 CORRECT! You guessed the query!")
-                                    st.markdown(f"""
-                                    <div style="background: #d4edda; padding: 1rem; border-radius: 0.5rem;">
-                                        <h3>✅ Correct Guess!</h3>
-                                        <p>The writer's query returned {original['row_count']} rows with columns: {', '.join(original['columns'])}</p>
-                                        <p><strong>The actual query was:</strong></p>
-                                        <code>{game['query']}</code>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                    
-                                    # Store guess
-                                    game['guesses'].append({
-                                        'guesser': st.session_state.player_name,
-                                        'query': guess_query,
-                                        'correct': True
-                                    })
-                                else:
-                                    st.warning(f"❌ Not quite right! Your query returned {len(result)} rows, but expected {original['row_count']} rows.")
-                                    st.info("Try again with a different query!")
-                                    
-                                    game['guesses'].append({
-                                        'guesser': st.session_state.player_name,
-                                        'query': guess_query,
-                                        'correct': False
-                                    })
-                    else:
-                        st.error("Game not ready yet. Wait for the writer to lock their query!")
+                if error:
+                    st.error(f"Error: {error}")
                 else:
-                    st.error("Game not found!")
-        
-        # Display game status for writer
-        if st.session_state.get('guessing_role') == 'writer' and st.session_state.get('guessing_game_id'):
-            game = st.session_state.guessing_games[st.session_state.guessing_game_id]
+                    result_info = {
+                        'row_count': len(result),
+                        'columns': list(result.columns) if not result.empty else [],
+                        'sample': result.head(3).to_dict() if not result.empty else {}
+                    }
+                    lock_guessing_query(st.session_state.guessing_session_id, secret_query, result_info)
+                    st.success("✅ Game locked! Share the code with the guesser.")
+    
+    else:  # Be the Guesser
+        game_code = st.text_input("Enter Game Code:", placeholder="e.g., A1B2C3D4")
+        if st.button("🎯 Join Game", use_container_width=True) and game_code:
+            game_code = game_code.upper()
+            success, writer = join_guessing_game(game_code, st.session_state.player_name)
             
-            if game['guesses']:
+            if success:
+                st.session_state.guessing_session_id = game_code
+                st.session_state.guessing_role = 'guesser'
+                st.success(f"✅ Joined game: {game_code}!")
+                st.info(f"Writer: {writer}")
+                
+                # Display clues
+                game = get_guessing_game(game_code)
+                if game and game['result_info']:
+                    info = game['result_info']
+                    st.markdown("---")
+                    st.markdown("### 🔍 Clues")
+                    st.markdown(f"**Row count:** {info['row_count']} rows")
+                    st.markdown(f"**Columns:** {', '.join(info['columns'])}")
+                    
+                    if info['sample']:
+                        st.markdown("**Sample data (first 3 rows):**")
+                        sample_df = pd.DataFrame(info['sample'])
+                        st.dataframe(sample_df, use_container_width=True)
+                    
+                    st.markdown("---")
+                    st.markdown("### 💭 Your Guess")
+                    
+                    guess_query = st.text_area(
+                        "What SQL query do you think the writer wrote?",
+                        height=100,
+                        placeholder="SELECT * FROM cases WHERE ...",
+                        key="guess_query"
+                    )
+                    
+                    if st.button("🔍 Submit Guess", use_container_width=True) and guess_query:
+                        result, error = execute_query(guess_query)
+                        
+                        if error:
+                            st.error(f"Error: {error}")
+                        else:
+                            is_correct = (
+                                len(result) == info['row_count'] and
+                                list(result.columns) == info['columns']
+                            )
+                            
+                            submit_guess(game_code, st.session_state.player_name, guess_query, is_correct)
+                            
+                            if is_correct:
+                                st.balloons()
+                                st.success("🎉 CORRECT! You guessed the query!")
+                                st.markdown(f"""
+                                <div style="background: #d4edda; padding: 1rem; border-radius: 0.5rem;">
+                                    <h3>✅ Correct Guess!</h3>
+                                    <p><strong>The actual query was:</strong></p>
+                                    <code>{game['secret_query']}</code>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            else:
+                                st.warning(f"❌ Not quite right! Your query returned {len(result)} rows, but expected {info['row_count']} rows.")
+                                st.info("Try again with a different query!")
+            else:
+                st.error("Game not found or not ready yet!")
+        
+        # Show guess history for guesser
+        if st.session_state.get('guessing_session_id') and st.session_state.get('guessing_role') == 'guesser':
+            game = get_guessing_game(st.session_state.guessing_session_id)
+            if game and game['guesses']:
                 st.markdown("---")
-                st.markdown("### 📝 Guesses Received")
+                st.markdown("### 📝 Your Guesses")
                 for guess in game['guesses']:
                     if guess['correct']:
                         st.success(f"✅ {guess['guesser']} guessed correctly!")
                     else:
-                        st.info(f"❌ {guess['guesser']} tried: {guess['query'][:50]}...")
+                        st.info(f"❌ Attempt: {guess['query'][:50]}...")
+    
+    # Show status for writer
+    if st.session_state.get('guessing_role') == 'writer' and st.session_state.get('guessing_session_id'):
+        game = get_guessing_game(st.session_state.guessing_session_id)
+        if game and game['guesses']:
+            st.markdown("---")
+            st.markdown("### 📝 Guesses Received")
+            for guess in game['guesses']:
+                if guess['correct']:
+                    st.success(f"✅ {guess['guesser']} guessed correctly!")
+                else:
+                    st.info(f"❌ {guess['guesser']} attempted: {guess['query'][:50]}...")
     
     # ============ SOLO MODE ============
     else:
@@ -532,7 +496,7 @@ with st.sidebar:
         conn.close()
     except:
         pass
-    
+
 # ============ MAIN CONTENT ============
 st.title("🕵️ SQL Detective Academy")
 

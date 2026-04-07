@@ -105,7 +105,37 @@ def create_database():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
-    
+# Add these tables to your create_database() function
+
+    # Multiplayer race sessions table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS race_sessions (
+        session_id TEXT PRIMARY KEY,
+        host_name TEXT NOT NULL,
+        session_code TEXT NOT NULL,
+        players TEXT,  -- JSON array of player names
+        player_progress TEXT,  -- JSON object of player progress
+        status TEXT DEFAULT 'waiting',
+        start_time TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+
+    # Query guessing game sessions table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS guessing_sessions (
+        session_id TEXT PRIMARY KEY,
+        writer_name TEXT NOT NULL,
+        session_code TEXT NOT NULL,
+        secret_query TEXT,
+        result_info TEXT,  -- JSON with row_count, columns, sample
+        status TEXT DEFAULT 'waiting',
+        guesses TEXT,  -- JSON array of guesses
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')    
+
+
     # Check if data already exists
     cursor.execute("SELECT COUNT(*) FROM cases")
     if cursor.fetchone()[0] == 0:
