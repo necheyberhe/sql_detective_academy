@@ -3,7 +3,7 @@ import pandas as pd
 import sqlite3
 import time
 import json
-
+from ai_hints import AIHintGenerator
 # Import multiplayer modules
 from multiplayer import (
     create_race_session, join_race_session, start_race_session,
@@ -188,6 +188,12 @@ if 'guessing_session_id' not in st.session_state:
     st.session_state.guessing_session_id = None
 if 'guessing_role' not in st.session_state:
     st.session_state.guessing_role = None
+if 'use_ai_hints' not in st.session_state:
+    st.session_state.use_ai_hints = False
+if 'ai_hint_generator' not in st.session_state:
+    st.session_state.ai_hint_generator = AIHintGenerator()
+if 'query_history' not in st.session_state:
+    st.session_state.query_history = []
 
 # Initialize database
 create_database()
@@ -291,8 +297,21 @@ with st.sidebar:
     if completed_count >= 5:
         st.success("🏅 Master Detective")
     
-    st.markdown("---")
     
+    st.markdown("---")
+    st.markdown("### 🤖 AI Assistant")
+    use_ai = st.toggle("✨ Enable AI-Powered Hints", value=st.session_state.use_ai_hints)
+    st.session_state.use_ai_hints = use_ai
+    
+    if use_ai:
+        if st.session_state.ai_hint_generator.enabled:
+            st.success("🤖 AI hints active! (OpenAI API key found)")
+        else:
+            st.warning("⚠️ No OpenAI API key found. Using fallback hints.")
+            st.caption("Add OPENAI_API_KEY to environment for AI hints")
+    else:
+        st.info("💡 Toggle on for smart AI hints") 
+
     # Database Preview & Stats - NOW INDENTED CORRECTLY
     st.markdown("### 📚 Database Preview & Stats")
     try:
@@ -659,10 +678,41 @@ if st.session_state.game_mode == 'solo' or (st.session_state.game_mode == 'race'
                             st.info("Query executed but returned no results.")
             else:
                 st.warning("Please enter a SQL query!")
-    
     with col2:
         if st.button("💡 Get Hint", use_container_width=True):
-            st.info(f"💡 Hint: {level['hint']}")
+            if st.session_state.use_ai_hints:
+                with st.spinner("🤖 AI analyzing your query..."):
+                    # Get the last attempt for this level
+                    last_attempt = None
+                    for hist in reversed(st.session_state.query_history):
+                        if hist.get('level') == current_level:
+                            last_attempt = hist
+                            break
+                    
+                    # Build result info for AI
+                    result_info = None
+                    error = None
+                    if last_attempt:
+                        if 'error' in last_attempt:
+                            error = last_attempt['error']
+                        elif 'result_rows' in last_attempt:
+                            result_info = {
+                                'expected': f"Correct solution for Level {current_level}",
+                                'actual': f"Returned {last_attempt['result_rows']} rows"
+                            }
+                    
+                    # Generate AI hint
+                    ai_hint = st.session_state.ai_hint_generator.generate_hint(
+                        user_query=query if query else level['tip'],
+                        level_num=current_level,
+                        level_info=level,
+                        error=error,
+                        result_info=result_info
+                    )
+                    st.info(ai_hint)
+            else:
+                # Use standard hint
+                st.info(f"💡 Hint: {level['hint']}")
     
     with col3:
         if st.button("🔄 Reset Level", use_container_width=True):
