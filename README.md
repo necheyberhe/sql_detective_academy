@@ -1,172 +1,106 @@
-# 🕵️ SQL Detective Academy
+#  Assignment 1-Task4 
+Course: Big Data Analytics
+Task: Build an interactive web application that teaches SQL concepts
+Submission: Demo video + pdf report+ README with design choices and SQL concepts
+Name: Nechi Berhe Weldu
+ID:850164070
 
-An interactive, gamified web application that teaches SQL fundamentals through detective-themed challenges and competitive multiplayer modes.
+ # What I Built
+SQL Detective Academy is a gamified web application that teaches absolute beginners how to write SQL queries. Instead of boring tutorials, users play as detectives solving crimes by writing real SQL queries against a crime database.
 
----
+# How It Works
+User enters a detective name (e.g., "Nechi Berhe")
+User reads a case brief with a specific mission
+User writes a SQL query in the editor
+System executes the query against a real SQLite database
+System validates the result against expected outcomes
+User earns points and progresses to harder levels
+The application has 5 progressive levels that teach core SQL concepts in a logical order, plus multiplayer features for competitive learning.
 
-## 🎮 Live Demo
+# Game Modes
+Mode	Description
+Solo Mode:	Learn at your own pace through 5 detective levels
+Race Mode: Compete against a friend to solve all levels first
+Query Guessing Game:	Write a secret query; others guess what it returns
+# SQL Concepts Covered
+Level	Concept	SQL Syntax	Real Detective Application
+1	Basic SELECT	SELECT * FROM cases;	View all case files
+2	Filtering with WHERE	WHERE solved = 0 AND crime_type = 'Murder'	Find active murder cases
+3	Sorting and Limiting	ORDER BY date_opened DESC LIMIT 3	Prioritize most urgent cases
+4	Aggregation with GROUP BY	GROUP BY crime_type, COUNT(*)	Analyze crime statistics
+5	Joining Tables	JOIN evidence ON cases	Connect evidence to cases
+Each level builds on the previous one, creating a natural learning progression from simple retrieval to complex multi-table queries.
 
-[Play SQL Detective Academy](https://your-streamlit-app-url.streamlit.app) *(Replace with your deployed URL)*
+# Technology Choices & Rationale
+Why These Technologies?
+Technology	Why I Chose It
+Streamlit:Fastest way to build data apps. No front-end JavaScript required. Built-in widgets (buttons, text areas, dataframes) saved weeks of development time.
+SQLite3:	Zero-configuration embedded database. No separate server needed. Perfect for educational tools where users just need to run the app.
+Pandas:	Makes SQL query results display beautifully as interactive tables. Handles data validation logic cleanly.
+Python:	Easy for beginners to understand if they want to modify the code. Large ecosystem of libraries.
 
----
+Conclusion: Streamlit + SQLite3 was the right choice for rapid development of an interactive educational tool.
 
-## 📋 Table of Contents
+# Challenges Encountered & Solutions
+Challenge 1: Real-time Race Updates
+Problem: When Player 1 started the race, Player 2's screen still showed "Waiting for host..." because Streamlit sessions don't automatically communicate.
 
-- [Overview](#overview)
-- [Features](#features)
-- [SQL Concepts Taught](#sql-concepts-taught)
-- [Tech Stack](#tech-stack)
-- [Installation](#installation)
-- [How to Play](#how-to-play)
-- [Game Modes](#game-modes)
-- [Database Schema](#database-schema)
-- [Project Structure](#project-structure)
-- [Assignment Compliance](#assignment-compliance)
+Solution: I implemented a shared SQLite database that stores race status (waiting or racing). Player 2's page auto-refreshes every 3 seconds to check the database. When it sees status='racing', it shows the game.
 
----
+Challenge 2: Progress Not Updating for Both Players
+Problem: When Player 1 completed Level 2, Player 2 still saw "1/5" for Player 1's progress.
+Solution: I call update_race_progress() immediately after each level completion, saving to the database. Both players' pages auto-refresh every 5 seconds to fetch the latest progress.
 
-## 🎯 Overview
+Challenge 3: Validating User Queries
+Problem: How do I check if a user's query is "correct" when there are multiple valid SQL approaches?
+Solution: I validate based on results, not query text. For each level, I check:
 
-SQL Detective Academy transforms SQL learning into an exciting detective adventure. Players solve crimes by writing real SQL queries against a preloaded crime database. The game features 5 progressive levels, multiple game modes, and a detective theme that makes learning engaging and memorable.
+Row count matches expected
 
-**Target Audience:** Absolute beginners who have never written a SQL query before.
+Specific columns exist
 
----
+Data values are correct (e.g., all priority='High' for Level 3)
 
-## ✨ Features
+This allows multiple correct solutions (e.g., SELECT * FROM cases vs SELECT case_id, case_name FROM cases both work for Level 1).
 
-### Core Platform (Task 4.1)
 
-| Feature | Description |
-|---------|-------------|
-| ✅ **Real SQLite Database** | Preloaded with crime cases and evidence data |
-| ✅ **Interactive SQL Editor** | Write and execute real SQL queries |
-| ✅ **5 Progressive Levels** | SELECT → WHERE → ORDER BY/LIMIT → GROUP BY → JOIN |
-| ✅ **Smart Validation** | Checks query results against expected outcomes |
-| ✅ **Helpful Feedback** | Specific hints, not just "incorrect" |
-| ✅ **Progress Tracking** | Visual progress bar, badges, and score system |
+# What This Platform Teaches
+Core SQL Skills
+Reading data (SELECT) - The most common SQL operation
+Filtering data (WHERE) - Finding specific information
+Sorting data (ORDER BY) - Organizing results meaningfully
+Limiting results (LIMIT) - Focusing on top priorities
+Grouping data (GROUP BY) - Creating summaries and statistics
+Joining tables (JOIN) - Connecting related information
 
-### Creative Features (Task 4.2)
+Learning Design Principles
+Principle	How It's Implemented
+Progressive Difficulty	Each level adds one new concept
+Immediate Feedback	Query results show instantly
+Specific Hints	Not just "wrong" - tells you what to fix
+Gamification	Points, badges, and competitive modes
+Real Database	Not just syntax - real data interaction
+# Project Structure
 
-| Feature | Description |
-|---------|-------------|
-| 🏆 **Detective Theme** | Solve crimes, collect evidence, catch criminals |
-| 🏁 **Multiplayer Race Mode** | Compete against friends to solve all 5 levels first |
-| 🎭 **Query Guessing Game** | One player writes a query, another guesses what it returns |
-| 🎖️ **Badge System** | Earn ranks: Rookie → Junior → Master Detective |
-| 💡 **Smart Hints** | Context-aware hints based on your mistakes |
+sql-detective-academy/
+├── app.py                 # Main Streamlit application (all UI and game logic)
+├── multiplayer.py         # Race mode and guessing game functions
+├── ai_hints.py            # AI-powered hint generation (optional)
+├── requirements.txt       # Python dependencies
+├── crime_academy.db       # SQLite database (auto-generated)
+└── README.md              # This file
+💻 Installation & Running Locally
 
----
-
-## 📚 SQL Concepts Taught
-
-| Level | Concept | Learning Objective |
-|-------|---------|-------------------|
-| 1 | `SELECT *` | Retrieve all data from a table |
-| 2 | `WHERE` with `AND` | Filter rows based on conditions |
-| 3 | `ORDER BY` + `LIMIT` | Sort results and limit rows |
-| 4 | `GROUP BY` + `COUNT(*)` | Aggregate data and create summaries |
-| 5 | `JOIN` (INNER JOIN) | Combine data from multiple tables |
-
----
-
-## 🛠️ Tech Stack
-
-| Technology | Purpose |
-|------------|---------|
-| **Python 3.9+** | Core programming language |
-| **Streamlit** | Web app framework and UI |
-| **SQLite3** | Embedded database |
-| **Pandas** | Query result handling and data manipulation |
-| **SQL** | Query language for challenges |
-
----
-
-## 💻 Installation
-
-### Prerequisites
-
-- Python 3.9 or higher
-- pip (Python package manager)
-
-### Step 1: Clone the Repository
-
-```bash
+# Clone the repository
 git clone https://github.com/yourusername/sql-detective-academy.git
 cd sql-detective-academy
 
-### Step 2: Install Dependencies
+# Install dependencies
 pip install -r requirements.txt
-pip install streamlit pandas
-### Step 3: Run the Application
+
+# Run the app
 streamlit run app.py
-### How to Play
-Getting Started
-Enter your detective name (e.g., "Sherlock Holmes")
+🔗 Live Demo
+URL: https://sqldetectiveacademy-nb.streamlit.app/
 
-Choose a game mode from the sidebar
-
-Read the case brief and mission objective
-
-Write a SQL query in the editor
-
-Click Execute to run your query
-
-Get feedback and try again if needed
-
-Earn points and badges as you progress
-### Level Progression
-Level 1: The First Clue
-├── Task: Show all cases
-├── SQL: SELECT * FROM cases;
-└── Success: Access all case files
-
-Level 2: Following the Evidence
-├── Task: Find unsolved murder cases
-├── SQL: WHERE solved = 0 AND crime_type = 'Murder'
-└── Success: Identify active murder cases
-
-Level 3: Prioritizing Cases
-├── Task: Find 3 most recent high-priority cases
-├── SQL: ORDER BY date_opened DESC LIMIT 3
-└── Success: Focus on urgent cases
-
-Level 4: Crime Statistics
-├── Task: Count cases by crime type
-├── SQL: GROUP BY crime_type, COUNT(*)
-└── Success: Reveal crime patterns
-
-Level 5: Connecting the Dots
-├── Task: List evidence with case names
-├── SQL: JOIN evidence ON cases
-└── Success: Master Detective!
-
-### Game Modes
-🎯 Solo Mode
-Learn at your own pace. Complete all 5 levels, earn points, and unlock badges. Perfect for beginners.
-
-🏁 Race Mode
-Compete against another player in real-time:
-
-Create a Race - Get a unique race code
-
-Share the code with your opponent
-
-Race to complete all 5 levels
-
-First to finish wins!
-
-🎭 Query Guessing Game
-Test your SQL understanding:
-
-Writer Mode: Write a secret SQL query
-
-Guesser Mode: See row count, columns, and sample data
-📁 Project Structure
-
-sql-detective-academy/
-├── app.py                 # Main Streamlit application
-├── multiplayer.py         # Multiplayer race & guessing game logic
-├── requirements.txt       # Python dependencies
-├── crime_academy.db       # SQLite database (auto-generated on first run)
-└── README.md             # This file
+The app is deployed on Streamlit Cloud and accessible to anyone with the link.
