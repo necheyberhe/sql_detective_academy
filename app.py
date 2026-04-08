@@ -12,6 +12,41 @@ from multiplayer import (
     submit_guess, get_guessing_game
 )
 
+# Database setup - safe to run every time
+def init_race_database():
+    conn = sqlite3.connect('races.db')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS races (
+            race_code TEXT PRIMARY KEY,
+            started INTEGER DEFAULT 0,
+            host_session TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Initialize database (runs every app start, but only creates if missing)
+init_race_database()
+
+# Rest of your race functions
+def start_race(race_code):
+    conn = sqlite3.connect('races.db')
+    conn.execute("UPDATE races SET started = 1 WHERE race_code = ?", (race_code,))
+    conn.commit()
+    conn.close()
+
+def is_race_started(race_code):
+    conn = sqlite3.connect('races.db')
+    result = conn.execute("SELECT started FROM races WHERE race_code = ?", (race_code,)).fetchone()
+    conn.close()
+    return result[0] == 1 if result else False
+
+def create_race(race_code, host_session):
+    conn = sqlite3.connect('races.db')
+    conn.execute("INSERT OR IGNORE INTO races (race_code, started, host_session) VALUES (?, 0, ?)", 
+                 (race_code, host_session))
+    conn.commit()
+    conn.close()
 # ============ DATABASE SETUP ============
 def create_database():
     conn = sqlite3.connect('crime_academy.db')
