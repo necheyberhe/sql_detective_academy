@@ -201,3 +201,16 @@ def get_guessing_game(session_code):
             'guesses': json.loads(result[6]) if result[6] else []
         }
     return None
+def finish_race_session(session_code, winner_name, winner_time):
+    """Mark race as finished with winner"""
+    conn = sqlite3.connect('crime_academy.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+    UPDATE race_sessions 
+    SET status = 'finished'
+    WHERE session_id = ?
+    ''', (session_code,))
+    
+    conn.commit()
+    conn.close()

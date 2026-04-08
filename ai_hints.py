@@ -28,26 +28,16 @@ class AIHintGenerator:
                       result_info: Optional[Dict] = None) -> str:
         """
         Generate a personalized hint for the user's incorrect query
-        
-        Args:
-            user_query: The user's SQL query
-            level_num: Current level number
-            level_info: Dictionary with level details
-            error: SQL error message if any
-            result_info: Info about the query results (rows returned, etc.)
-        
-        Returns:
-            Personalized hint string
         """
         
         if not self.enabled:
             return self._fallback_hint(level_num, user_query, error)
         
-        # Build context for the AI
         context = self._build_context(user_query, level_num, level_info, error, result_info)
         
         try:
-            response = openai.ChatCompletion.create(
+            # Updated to new OpenAI API
+            response = openai.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {
@@ -68,9 +58,7 @@ class AIHintGenerator:
                     }
                 ],
                 max_tokens=150,
-                temperature=0.7,
-                presence_penalty=0.5,
-                frequency_penalty=0.3
+                temperature=0.7
             )
             
             hint = response.choices[0].message.content.strip()
@@ -137,57 +125,12 @@ class AIHintGenerator:
         
         if error:
             if "no such column" in error.lower():
-                return "🔍 Column name error! Check the 'Database Explorer' in sidebar for correct column names."
+                return "🔍 Column name error! Check sidebar for correct column names."
             elif "no such table" in error.lower():
-                return "📁 Table doesn't exist! Available tables: cases, evidence, suspects"
+                return "📁 Table doesn't exist! Available tables: cases, evidence"
             elif "syntax error" in error.lower():
                 return "📝 SQL syntax error! Check spelling, quotes, and commas."
             else:
                 return f"❌ Error: {error[:100]}... Check your syntax!"
         
         return level_hints.get(level_num, "🔍 Check your query against the mission requirements!")
-
-# Optional: Use free alternative (Gemini API) if OpenAI key not available
-class FreeAIFallback:
-    """Fallback to free AI options or local rules"""
-    
-    @staticmethod
-    def get_hint(level_num: int, error_type: str = None) -> str:
-        """Simple rule-based hints when no API key is available"""
-        
-        hints = {
-            1: {
-                'syntax': "Start with SELECT, then *, then FROM cases",
-                'logic': "Use SELECT * FROM cases to view all case files",
-                'common': "Remember to end with a semicolon ;"
-            },
-            2: {
-                'syntax': "Use WHERE clause with AND to combine conditions",
-                'logic': "Filter for unsolved (solved = 0) murder cases",
-                'common': "Use single quotes around text: 'Murder'"
-            },
-            3: {
-                'syntax': "ORDER BY sorts, LIMIT restricts rows",
-                'logic': "Filter high priority, sort newest first, limit to 3",
-                'common': "DESC shows newest first"
-            },
-            4: {
-                'syntax': "GROUP BY groups rows, COUNT(*) counts them",
-                'logic': "Group by crime_type and count cases per type",
-                'common': "Use AS to name the count column"
-            },
-            5: {
-                'syntax': "JOIN connects tables ON matching columns",
-                'logic': "Join evidence with cases using case_id",
-                'common': "Use table aliases (e, c) for shorter queries"
-            }
-        }
-        
-        level_hint = hints.get(level_num, hints[1])
-        
-        if error_type == 'syntax':
-            return f"💡 Syntax Tip: {level_hint['syntax']}"
-        elif error_type == 'logic':
-            return f"💡 Logic Tip: {level_hint['logic']}"
-        else:
-            return f"💡 Hint: {level_hint['logic']}\n\nCommon issue: {level_hint['common']}"
