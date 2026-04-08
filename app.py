@@ -368,43 +368,35 @@ if game_mode == "🏁 Race Mode":
                 st.error("❌ Race not found or already started!")
     
     # Display race status
-    # Display race status
-if st.session_state.get('race_session_id'):
-    status = get_race_status(st.session_state.race_session_id)
-    if status:
-        st.markdown("---")
-        st.markdown("### 🏁 Race Status")
-        st.info(f"**Race Code:** `{st.session_state.race_session_id}`")
-        
-        if status['status'] == 'waiting':
-            st.warning("⏳ Waiting for host to start the race...")
-            if st.session_state.race_host:
-                st.info("👑 You are the host. Click 'Start Race' above to begin!")
-        else:
-            st.success("🏁 RACE IN PROGRESS!")
-            if status['start_time']:
-                start = datetime.datetime.fromisoformat(status['start_time'])
-                elapsed = (datetime.datetime.now() - start).total_seconds()
-                st.markdown(f"<div style='background: #000; color: #0f0; padding: 0.5rem; border-radius: 0.5rem; text-align: center;'>⏱️ Race Time: {elapsed:.1f}s</div>", unsafe_allow_html=True)
-        
-        st.markdown("**Players:**")
-        for player in status['players']:
-            completed = len(status['player_progress'].get(player, []))
-            progress_bar = "█" * completed + "░" * (5 - completed)
-            is_me = (player == st.session_state.player_name)
-            prefix = "👤 **YOU**" if is_me else "👤"
-            st.write(f"{prefix} {player}: {progress_bar} ({completed}/5)")
-        
-        if status['status'] == 'racing' and st.session_state.completed_levels:
-            update_race_progress(st.session_state.race_session_id, st.session_state.player_name, st.session_state.completed_levels)
-        
-        # ========== ADD AUTO-REFRESH HERE ==========
-        if status['status'] == 'racing':
-            # Auto-refresh every 5 seconds to show updated progress
-            st.caption(f"Auto-refreshing every 5 seconds... Last updated: {datetime.datetime.now().strftime('%H:%M:%S')}")
-            time.sleep(5)
-            st.rerun()
-        # ========== END OF AUTO-REFRESH ==========
+    if st.session_state.get('race_session_id'):
+        status = get_race_status(st.session_state.race_session_id)
+        if status:
+            st.markdown("---")
+            st.markdown("### 🏁 Race Status")
+            st.info(f"**Race Code:** `{st.session_state.race_session_id}`")
+            
+            if status['status'] == 'waiting':
+                st.warning("⏳ Waiting for host to start the race...")
+                if st.session_state.race_host:
+                    st.info("👑 You are the host. Click 'Start Race' above to begin!")
+            else:
+                st.success("🏁 RACE IN PROGRESS!")
+                if status['start_time']:
+                    start = datetime.datetime.fromisoformat(status['start_time'])
+                    elapsed = (datetime.datetime.now() - start).total_seconds()
+                    st.markdown(f"<div style='background: #000; color: #0f0; padding: 0.5rem; border-radius: 0.5rem; text-align: center;'>⏱️ Race Time: {elapsed:.1f}s</div>", unsafe_allow_html=True)
+            
+            st.markdown("**Players:**")
+            for player in status['players']:
+                completed = len(status['player_progress'].get(player, []))
+                progress_bar = "█" * completed + "░" * (5 - completed)
+                is_me = (player == st.session_state.player_name)
+                prefix = "👤 **YOU**" if is_me else "👤"
+                st.write(f"{prefix} {player}: {progress_bar} ({completed}/5)")
+            
+            if status['status'] == 'racing' and st.session_state.completed_levels:
+                update_race_progress(st.session_state.race_session_id, st.session_state.player_name, st.session_state.completed_levels)
+
 # Guessing Game Mode
 elif game_mode == "🎭 Query Guessing Game":
     st.session_state.game_mode = 'guessing'
