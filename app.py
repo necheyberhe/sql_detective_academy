@@ -3,8 +3,8 @@ import pandas as pd
 import sqlite3
 import time
 import json
+import datetime
 from ai_hints import AIHintGenerator
-# Import multiplayer modules
 from multiplayer import (
     create_race_session, join_race_session, start_race_session,
     update_race_progress, get_race_status,
@@ -12,41 +12,6 @@ from multiplayer import (
     submit_guess, get_guessing_game
 )
 
-# Database setup - safe to run every time
-def init_race_database():
-    conn = sqlite3.connect('races.db')
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS races (
-            race_code TEXT PRIMARY KEY,
-            started INTEGER DEFAULT 0,
-            host_session TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-# Initialize database (runs every app start, but only creates if missing)
-init_race_database()
-
-# Rest of your race functions
-def start_race(race_code):
-    conn = sqlite3.connect('races.db')
-    conn.execute("UPDATE races SET started = 1 WHERE race_code = ?", (race_code,))
-    conn.commit()
-    conn.close()
-
-def is_race_started(race_code):
-    conn = sqlite3.connect('races.db')
-    result = conn.execute("SELECT started FROM races WHERE race_code = ?", (race_code,)).fetchone()
-    conn.close()
-    return result[0] == 1 if result else False
-
-def create_race(race_code, host_session):
-    conn = sqlite3.connect('races.db')
-    conn.execute("INSERT OR IGNORE INTO races (race_code, started, host_session) VALUES (?, 0, ?)", 
-                 (race_code, host_session))
-    conn.commit()
-    conn.close()
 # ============ DATABASE SETUP ============
 def create_database():
     conn = sqlite3.connect('crime_academy.db')
@@ -219,6 +184,8 @@ if 'game_mode' not in st.session_state:
     st.session_state.game_mode = 'solo'
 if 'race_session_id' not in st.session_state:
     st.session_state.race_session_id = None
+if 'race_host' not in st.session_state:
+    st.session_state.race_host = False
 if 'guessing_session_id' not in st.session_state:
     st.session_state.guessing_session_id = None
 if 'guessing_role' not in st.session_state:
@@ -269,8 +236,6 @@ def validate_level(level_num, result, query):
     
     elif level_num == 4:
         if 'crime_type' in result.columns:
-            # Verify counts are correct
-            expected = {1: 3, 2: 2, 3: 1, 4: 1, 5: 1}  # Rough check
             return True, level['success']
         return False, f"Use GROUP BY crime_type and COUNT(*) to count cases per type. {level['hint']}"
     
@@ -287,6 +252,7 @@ def validate_level(level_num, result, query):
             return False, f"Need to use JOIN to combine tables. {level['hint']}"
     
     return False, "Not quite right. Check your query!"
+
 # ============ SIDEBAR ============
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/1995/1995571.png", width=80)
@@ -332,7 +298,6 @@ with st.sidebar:
     if completed_count >= 5:
         st.success("🏅 Master Detective")
     
-    
     st.markdown("---")
     st.markdown("### 🤖 AI Assistant")
     use_ai = st.toggle("✨ Enable AI-Powered Hints", value=st.session_state.use_ai_hints)
@@ -340,24 +305,21 @@ with st.sidebar:
     
     if use_ai:
         if st.session_state.ai_hint_generator.enabled:
-            st.success("🤖 AI hints active! (OpenAI API key found)")
+            st.success("🤖 AI hints active!")
         else:
             st.warning("⚠️ No OpenAI API key found. Using fallback hints.")
             st.caption("Add OPENAI_API_KEY to environment for AI hints")
     else:
         st.info("💡 Toggle on for smart AI hints") 
 
-    # Database Preview & Stats - NOW INDENTED CORRECTLY
+    # Database Preview & Stats
     st.markdown("### 📚 Database Preview & Stats")
     try:
         conn = sqlite3.connect('crime_academy.db')
-        
-        # Preview
         preview = pd.read_sql_query("SELECT * FROM cases LIMIT 3", conn)
         st.dataframe(preview, use_container_width=True)
         st.caption("Cases table (first 3 rows)")
         
-        # Stats
         case_count = pd.read_sql_query("SELECT COUNT(*) as count FROM cases", conn).iloc[0]['count']
         evidence_count = pd.read_sql_query("SELECT COUNT(*) as count FROM evidence", conn).iloc[0]['count']
         st.caption(f"📁 {case_count} cases preloaded")
@@ -366,6 +328,7 @@ with st.sidebar:
         conn.close()
     except Exception as e:
         st.caption("Database ready")
+
 # ============ GAME MODE HANDLING ============
 
 # Race Mode
@@ -386,14 +349,9 @@ if game_mode == "🏁 Race Mode":
             st.success(f"✅ Race created! Code: **{session_id}**")
             st.info("Share this code with your opponent!")
         
-        if st.session_state.get('race_session_id'):
+        if st.session_state.get('race_session_id') and st.session_state.race_host:
             if st.button("🚦 Start Race", use_container_width=True):
                 start_race_session(st.session_state.race_session_id)
-                st.session_state.race_started = True
-                st.session_state.race_start_time = time.time()
-                st.session_state.completed_levels = set()
-                st.session_state.current_level = 1
-                st.session_state.score = 0
                 st.success("🏁 Race started! First to complete all 5 levels wins!")
                 st.rerun()
     
@@ -405,11 +363,7 @@ if game_mode == "🏁 Race Mode":
                 st.session_state.race_session_id = session_code
                 st.session_state.race_host = False
                 st.success(f"✅ Joined race: {session_code}!")
-                
-                status = get_race_status(session_code)
-                if status and status['status'] == 'racing':
-                    st.info("🏁 Race already in progress!")
-                    st.session_state.race_started = True
+                st.rerun()
             else:
                 st.error("❌ Race not found or already started!")
     
@@ -423,10 +377,11 @@ if game_mode == "🏁 Race Mode":
             
             if status['status'] == 'waiting':
                 st.warning("⏳ Waiting for host to start the race...")
+                if st.session_state.race_host:
+                    st.info("👑 You are the host. Click 'Start Race' above to begin!")
             else:
                 st.success("🏁 RACE IN PROGRESS!")
                 if status['start_time']:
-                    import datetime
                     start = datetime.datetime.fromisoformat(status['start_time'])
                     elapsed = (datetime.datetime.now() - start).total_seconds()
                     st.markdown(f"<div style='background: #000; color: #0f0; padding: 0.5rem; border-radius: 0.5rem; text-align: center;'>⏱️ Race Time: {elapsed:.1f}s</div>", unsafe_allow_html=True)
@@ -460,7 +415,7 @@ elif game_mode == "🎭 Query Guessing Game":
             st.success(f"✅ Game created! Code: **{session_id}**")
             st.info("Share this code with the guesser!")
         
-        if st.session_state.get('guessing_session_id') and st.session_state.get('guessing_role') == 'writer':
+        if st.session_state.get('guessing_session_id') and st.session_state.guessing_role == 'writer':
             st.markdown("---")
             st.markdown("### ✍️ Write Your Secret Query")
             st.caption("Write a SQL query that the guesser will try to figure out!")
@@ -549,28 +504,6 @@ elif game_mode == "🎭 Query Guessing Game":
                                 st.info("Try again with a different query!")
             else:
                 st.error("Game not found or not ready yet!")
-        
-        if st.session_state.get('guessing_session_id') and st.session_state.get('guessing_role') == 'guesser':
-            game = get_guessing_game(st.session_state.guessing_session_id)
-            if game and game['guesses']:
-                st.markdown("---")
-                st.markdown("### 📝 Your Guesses")
-                for guess in game['guesses']:
-                    if guess['correct']:
-                        st.success(f"✅ {guess['guesser']} guessed correctly!")
-                    else:
-                        st.info(f"❌ Attempt: {guess['query'][:50]}...")
-    
-    if st.session_state.get('guessing_role') == 'writer' and st.session_state.get('guessing_session_id'):
-        game = get_guessing_game(st.session_state.guessing_session_id)
-        if game and game['guesses']:
-            st.markdown("---")
-            st.markdown("### 📝 Guesses Received")
-            for guess in game['guesses']:
-                if guess['correct']:
-                    st.success(f"✅ {guess['guesser']} guessed correctly!")
-                else:
-                    st.info(f"❌ {guess['guesser']} attempted: {guess['query'][:50]}...")
 
 # Solo Mode
 else:
@@ -602,9 +535,28 @@ if completed_count == 5:
         st.rerun()
     st.stop()
 
-# Only show gameplay UI in Solo Mode or Race Mode (when race is active)
-if st.session_state.game_mode == 'solo' or (st.session_state.game_mode == 'race' and st.session_state.get('race_started', False)):
-    
+# Determine if we should show gameplay
+show_gameplay = False
+
+if st.session_state.game_mode == 'solo':
+    show_gameplay = True
+elif st.session_state.game_mode == 'race' and st.session_state.get('race_session_id'):
+    # Check database for actual race status
+    race_data = get_race_status(st.session_state.race_session_id)
+    if race_data and race_data['status'] == 'racing':
+        show_gameplay = True
+    else:
+        # Race exists but hasn't started yet
+        st.info("🏁 Waiting for host to start the race...")
+        if st.session_state.get('race_host', False):
+            st.warning("👑 You are the host. Click 'Start Race' in the sidebar to begin!")
+        st.stop()
+elif st.session_state.game_mode == 'guessing':
+    st.info("🎭 Query Guessing Game active! Use the sidebar to create or join a game.")
+    st.stop()
+
+# Show gameplay if conditions are met
+if show_gameplay:
     current_level = st.session_state.current_level
     level = levels[current_level]
     
@@ -659,22 +611,18 @@ if st.session_state.game_mode == 'solo' or (st.session_state.game_mode == 'race'
 
                                     if st.session_state.game_mode == 'race' and len(st.session_state.completed_levels) == 5:
                                         # Player finished all 5 levels!
-                                        end_time = time.time()
-                                        race_time = end_time - st.session_state.race_start_time
-                                        
-                                        # Get race status to check if winner already declared
-                                        status = get_race_status(st.session_state.race_session_id)
+                                        race_data = get_race_status(st.session_state.race_session_id)
+                                        race_time = (datetime.datetime.now() - datetime.datetime.fromisoformat(race_data['start_time'])).total_seconds()
                                         
                                         # Check if this player is the first to finish
                                         winner_declared = False
-                                        for player, progress in status['player_progress'].items():
+                                        for player, progress in race_data['player_progress'].items():
                                             if len(progress) >= 5 and player != st.session_state.player_name:
                                                 winner_declared = True
                                                 break
                                         
                                         if not winner_declared:
                                             st.balloons()
-                                            st.success(f"🏆 RACE COMPLETE! 🏆\n\n{st.session_state.player_name} wins with time: {race_time:.1f} seconds!")
                                             st.markdown(f"""
                                             <div style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
                                                         padding: 2rem; border-radius: 1rem; text-align: center;">
@@ -683,13 +631,8 @@ if st.session_state.game_mode == 'solo' or (st.session_state.game_mode == 'race'
                                                 <p>Time: {race_time:.1f} seconds</p>
                                             </div>
                                             """, unsafe_allow_html=True)
-                                            
-                                            # Update race status to finished
-                                            
                                             st.stop()
-                                    # ===== END OF ADDED CODE =====
-                                                                     
-                                   
+                                    
                                     st.balloons()
                                     st.success(f"🎉 {feedback} +20 points!")
                                     
@@ -713,40 +656,20 @@ if st.session_state.game_mode == 'solo' or (st.session_state.game_mode == 'race'
                             st.info("Query executed but returned no results.")
             else:
                 st.warning("Please enter a SQL query!")
+    
     with col2:
         if st.button("💡 Get Hint", use_container_width=True):
             if st.session_state.use_ai_hints:
                 with st.spinner("🤖 AI analyzing your query..."):
-                    # Get the last attempt for this level
-                    last_attempt = None
-                    for hist in reversed(st.session_state.query_history):
-                        if hist.get('level') == current_level:
-                            last_attempt = hist
-                            break
-                    
-                    # Build result info for AI
-                    result_info = None
-                    error = None
-                    if last_attempt:
-                        if 'error' in last_attempt:
-                            error = last_attempt['error']
-                        elif 'result_rows' in last_attempt:
-                            result_info = {
-                                'expected': f"Correct solution for Level {current_level}",
-                                'actual': f"Returned {last_attempt['result_rows']} rows"
-                            }
-                    
-                    # Generate AI hint
                     ai_hint = st.session_state.ai_hint_generator.generate_hint(
                         user_query=query if query else level['tip'],
                         level_num=current_level,
                         level_info=level,
-                        error=error,
-                        result_info=result_info
+                        error=None,
+                        result_info=None
                     )
                     st.info(ai_hint)
             else:
-                # Use standard hint
                 st.info(f"💡 Hint: {level['hint']}")
     
     with col3:
@@ -800,7 +723,7 @@ if st.session_state.game_mode == 'solo' or (st.session_state.game_mode == 'race'
         SELECT * FROM cases ORDER BY date_opened DESC;
         SELECT * FROM cases LIMIT 3;
         SELECT crime_type, COUNT(*) FROM cases GROUP BY crime_type;
-        SELECT * FROM evidence JOIN cases ON evidence.case_id = cases.case_id;
+        SELECT * FROM evidence JOIN cases ON evidence.case_id = cases.case_id;                    
                 """)
             
     st.markdown("---")
