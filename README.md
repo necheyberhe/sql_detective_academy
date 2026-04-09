@@ -1,7 +1,7 @@
 #  Assignment 1-Task4 
 Course: Big Data Analytics
 Task: Build an interactive web application that teaches SQL concepts
-Submission: Demo video + pdf report+ README with design choices and SQL concepts
+Submission: Demo video  https://youtu.be/rNgO1BPanBw + pdf report+ README with design choices and SQL concepts
 
 Name: Nechi Berhe Weldu
 ID:850164070
